@@ -1,31 +1,33 @@
-import cv2
-import numpy
-import mss
-from PIL import Image
+import tkinter
+from PIL import Image, ImageTk
 
-from utils.text_recognition import box_sentences
+from classes.screen_capture import ScreenCapture
 
-with mss.mss() as screenshot:
-    # Part of the screen to capture
-    monitor = {"top": 100, "left": 220, "width": 900, "height": 640}
+class App:
+	def __init__(self, window, window_title):
+		self.window = window
+		self.window.title(window_title)
 
-    lasting_image = numpy.array(screenshot.grab(monitor))
-    while "Screen capturing":
-        image_array = numpy.array(screenshot.grab(monitor))
+		# open video source (by default this will try to open the computer webcam)
+		self.screen = ScreenCapture()
 
-        if not numpy.array_equal(lasting_image, image_array):
-          lasting_image = image_array
-          image = Image.frombytes(
-            'RGB',
-            (monitor.get('width'), monitor.get('height')),
-            screenshot.grab(monitor).rgb,
-            'raw'
-          )
-          image_array = box_sentences(image, image_array)
+		# Create a canvas that can fit the above video source size
+		self.canvas = tkinter.Canvas(window, width=self.screen.width, height=self.screen.height)
+		self.canvas.pack()
 
-        cv2.imshow("OpenCV/Numpy normal", image_array)
+		# After it is called once, the update method will be automatically called every delay milliseconds
+		self.delay = 500
+		self.update()
 
-        # Press "q" to quit
-        if cv2.waitKey(25) & 0xFF == ord("q"):
-          cv2.destroyAllWindows()
-          break
+		self.window.mainloop()
+
+	def update(self):
+		# Get a frame from the video source
+		shot = self.screen.get_shot()
+
+		self.photo = ImageTk.PhotoImage(image=Image.fromarray(shot))
+		self.canvas.create_image(0, 0, image=self.photo, anchor=tkinter.NW)
+
+		self.window.after(self.delay, self.update)
+
+App(tkinter.Tk(), "Real Time Translator")

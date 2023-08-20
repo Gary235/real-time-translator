@@ -3,9 +3,9 @@ import cv2
 import pytesseract
 from pytesseract import Output
 from langdetect import detect
+from googletrans import Translator
 
 from utils.image import get_grayscale
-from googletrans import Translator
 from enums import Colors, LanguageAcronyms
 
 
@@ -16,81 +16,100 @@ font_scale = 1
 
 translator = Translator(service_urls=['translate.googleapis.com'])
 
-def box_sentences(image, image_array):
-  sentences = {}
 
-  image = get_grayscale(numpy.array(image))
-  image_data = pytesseract.image_to_data(image, config='-l eng+spa+jpn --psm 6', output_type=Output.DICT)
+def get_sentence_by_top(top, sentences):
+	if sentences.get(top, False):
+		return sentences.get(top, None)
 
-  def get_sentence(top):
-    if sentences.get(top, False):
-      return sentences.get(top, None)
+	for i in range(top - TOP_RANGE, top + TOP_RANGE):
+		if sentences.get(i, False):
+			return sentences.get(i, None)
 
-    for i in range(top - TOP_RANGE, top + TOP_RANGE):
-      if sentences.get(i, False):
-        return sentences.get(i, None)
+	return None
 
-    return None
+def group_sentences(image_data, sentences):
+	n_boxes = len(image_data['text'])
+	for i in range(n_boxes):
+		if int(image_data['conf'][i]) <= 60:
+			continue
 
-  n_boxes = len(image_data['text'])
-  for i in range(n_boxes):
-    if int(image_data['conf'][i]) <= 60:
-      continue
+		current_top = image_data['top'][i]
+		current_sentence = get_sentence_by_top(current_top, sentences)
 
-    # previous_top = image_data['top'][i - 1] if i > 0 else None
-    # change_in_top = previous_top != current_top and previous_top != None
+		if current_sentence:
+			# So that we account for the spaces between words
+			left_diff = image_data['left'][i] - (image_data['left'][i - 1] + image_data['width'][i - 1])
 
-    current_top = image_data['top'][i]
-    current_sentence = get_sentence(current_top)
+			current_sentence['text'].append(image_data['text'][i])
+			current_sentence['width'] += image_data['width'][i] + left_diff
 
-    if current_sentence:
-      left_diff = image_data['left'][i] - (image_data['left'][i - 1] + image_data['width'][i - 1])
+		elif image_data['text'][i]:
+			sentences[current_top] = {}
+			sentences[current_top]['height'] = image_data['height'][i] + BLOCK_PADDING
+			sentences[current_top]['left'] = image_data['left'][i] - BLOCK_PADDING
+			sentences[current_top]['width'] = image_data['width'][i] + BLOCK_PADDING
+			sentences[current_top]['text'] = [image_data['text'][i]]
 
-      current_sentence['text'].append(image_data['text'][i])
-      current_sentence['width'] += image_data['width'][i] + left_diff
+def detect_language(text):
+	try:
+		language = detect(text)
+	except:
+		language = LanguageAcronyms.AUTO.value
 
-    elif image_data['text'][i]:
-      sentences[current_top] = {}
-      sentences[current_top]['height'] = image_data['height'][i] + BLOCK_PADDING
-      sentences[current_top]['left'] = image_data['left'][i] - BLOCK_PADDING
-      sentences[current_top]['width'] = image_data['width'][i] + BLOCK_PADDING
-      sentences[current_top]['text'] = [image_data['text'][i]]
+	return language
 
-  for top, sentence in sentences.items():
-    sentence_text = " ".join(sentence["text"])
-    if not sentence_text:
-      continue
+def put_text_in_place(sentence, translated_text, image_array, top):
+	(translated_w, translated_h), _ = cv2.getTextSize(translated_text, font, font_scale, thickness=1)
+	(x, y, w, h) = (sentence['left'], top - BLOCK_PADDING, sentence['width'], sentence['height'])
 
-    try:
-      language = detect(sentence_text)
-    except:
-      language = LanguageAcronyms.AUTO.value
+	# There may be differences of width/height between the original and translated text
+	width = max(w, translated_w)
+	height = max(h, translated_h)
 
-    if language != LanguageAcronyms.SPANISH.value:
-      sentence_text = translator.translate(sentence_text, dest=LanguageAcronyms.SPANISH.value).text
+	image_array = cv2.rectangle(
+		image_array,
+		(x, y),
+		(x + width, y + height),
+		Colors.BLACK.value,
+		cv2.FILLED
+	)
+	image_array = cv2.putText(
+		image_array,
+		translated_text,
+		(x, y + height),
+		font,
+		font_scale,
+		Colors.WHITE.value,
+		thickness=1
+	)
 
-    text_size, _ = cv2.getTextSize(sentence_text, font, font_scale, 1)
-    text_w, text_h = text_size
-    (x, y, w, h) = (sentence['left'], top - BLOCK_PADDING, sentence['width'], sentence['height'])
+def translate(sentences, image_array):
+	for top, sentence in sentences.items():
+		sentence_text = " ".join(sentence["text"])
+		if not sentence_text:
+			continue
 
-    width = max(w, text_w)
-    height = max(h, text_h)
+		language = detect_language(sentence_text)
+		if language != LanguageAcronyms.SPANISH.value:
+			sentence_text = translator.translate(sentence_text, dest=LanguageAcronyms.SPANISH.value).text
 
-    image_array = cv2.rectangle(
-      image_array,
-      (x, y),
-      (x + width, y + height),
-      Colors.BLACK.value,
-      cv2.FILLED
-    )
-    image_array = cv2.putText(
-      image_array,
-      sentence_text,
-      (x, y + height),
-      font,
-      font_scale,
-      Colors.WHITE.value,
-      thickness=1
-    )
+		put_text_in_place(sentence, sentence_text, image_array, top)
 
-  return image_array
+
+# --------------------------------------------------------------------------
+
+
+def recognize_and_translate(processed_image, image_array):
+	sentences = {}
+
+	processed_image = get_grayscale(numpy.array(processed_image))
+	image_data = pytesseract.image_to_data(
+		processed_image,
+		config='-l eng+spa+jpn --psm 6',
+		output_type=Output.DICT
+	)
+
+	group_sentences(image_data, sentences)
+	translate(sentences, image_array)
+
+	return image_array
