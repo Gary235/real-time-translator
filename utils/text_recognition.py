@@ -91,7 +91,10 @@ def translate(sentences, image_array):
 
 		language = detect_language(sentence_text)
 		if language != LanguageAcronyms.SPANISH.value:
-			sentence_text = translator.translate(sentence_text, dest=LanguageAcronyms.SPANISH.value).text
+			sentence_text = (translator
+		    .translate(sentence_text, LanguageAcronyms.SPANISH.value, language)
+				.text
+			)
 
 		put_text_in_place(sentence, sentence_text, image_array, top)
 

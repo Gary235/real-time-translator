@@ -7,11 +7,13 @@ from utils.text_recognition import recognize_and_translate
 
 
 class ScreenCapture:
-	def __init__(self):
-		self.monitor = {"top": 100, "left": 220, "width": 650, "height": 450}
+	def __init__(self, top, left, width, height):
+		self.top = top
+		self.left = left
+		self.width = width
+		self.height = height
 
-		self.width = self.monitor.get('width')
-		self.height = self.monitor.get('height')
+		self.monitor = {"top": top, "left": left, "width": width, "height": height}
 
 	def get_shot(self):
 		with mss.mss() as screenshot:
