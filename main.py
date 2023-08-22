@@ -65,6 +65,7 @@ class App:
 		if self._job is not None:
 			self.window.after_cancel(self._job)
 			self._job = None
+			self.screen = None
 			self.canvas.config(background='#d40f3d')
 
 	def update_capture(self):
