@@ -3,5 +3,5 @@ opencv-python
 pytesseract
 langdetect
 googletrans==3.1.0a0
-Pillow
+pillow
 mss
